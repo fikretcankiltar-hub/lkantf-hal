@@ -2,6 +2,7 @@
 #   PROJECT: AH+ACIKTIM Web Application (LKANT+F Technology) - Sürüm 2.5
 #   FEATURES: Full PWA (Android App Mode), 4 Languages, 100 Tables
 #   DEPLOYMENT: Production Ready for GitHub & Render
+#   UPDATE: LKANT+F Video Intro Integrated (Safe Deploy)
 # ====================================================================
 
 import os
@@ -28,7 +29,7 @@ login_manager = LoginManager(app)
 login_manager.login_view = 'restaurant_login'
 
 # ==========================================
-#              VERİ MODELLERİ
+#               VERİ MODELLERİ
 # ==========================================
 
 class Restaurant(UserMixin, db.Model):
@@ -84,7 +85,7 @@ def generate_unique_code():
             return code
 
 # ==========================================
-#         ÇOKLU DİL SÖZLÜĞÜ (4 DİL)
+#          ÇOKLU DİL SÖZLÜĞÜ (4 DİL)
 # ==========================================
 
 translations = {
@@ -112,7 +113,7 @@ translations = {
         'dashboard': 'Dashboard', 'manage_menu': 'Menu Setup', 'manage_tables': '100 Tables Grid',
         'orders': 'Live Orders Log', 'invalid_code': 'Invalid code, please check!',
         'back_to_panel': 'Back to Dashboard', 'add_item': '+ Add New Dish Row', 'order_status': 'Order Status',
-        'ask_bill': 'Request Bill & Leave  credentials 💳'
+        'ask_bill': 'Request Bill & Leave credentials 💳'
     },
     'de': {
         'app_name': 'AH+ACIKTIM', 'tech': 'TECHNOLOGIE', 'customer_login': 'Kundenlogin',
@@ -137,7 +138,7 @@ translations = {
         'register': 'Регистрация нового ресторана', 'email': 'Электронная почта', 'password': 'Пароль',
         'dashboard': 'Панель управления', 'manage_menu': 'Настройка меню', 'manage_tables': 'Карта на 100 столов',
         'orders': 'Живой лог заказов', 'invalid_code': 'Неверный код, проверьте еще раз!',
-        'back_to_panel': 'Вернуться в панель', 'add_item': '+ Добавить новое блюдо', 'order_status': 'Статус заказа',
+        'back_to_panel': 'Вернуться в исполняемую панель', 'add_item': '+ Добавить новое блюдо', 'order_status': 'Статус заказа',
         'ask_bill': 'Запросить счет 💳'
     }
 }
@@ -276,7 +277,25 @@ def render_lkantf_framework(main_content_html, **kwargs):
 #          HTML İÇERİK BLOKLARI
 # ==========================================
 
+# GİRİŞ FORMU DEĞİŞMEDİ, SADECE EN ÜSTÜNE TAM EKRAN VİDEO KATMANI GELDİ KANKA
 customer_index_view = '''
+<div id="lkantf-intro" style="
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; 
+    background: #0c0c0e; z-index: 9999; display: flex; align-items: center; justify-content: center; 
+    transition: opacity 0.8s ease; cursor: pointer;" onclick="closeIntro()">
+    
+    <video id="introVideo" width="100%" height="100%" style="object-fit: cover;" autoplay muted playsinline>
+        <source src="/static/lkantf_intro.mp4" type="video/mp4">
+        Sistem yükleniyor dostum...
+    </video>
+
+    <div style="position: absolute; top: 20px; right: 20px; background: rgba(0,0,0,0.6); 
+        color: #00e6ff; padding: 8px 16px; border-radius: 20px; font-weight: bold; 
+        font-size: 0.8rem; border: 1px solid #00e6ff; letter-spacing: 1px; text-transform: uppercase;">
+        GEÇ ➜
+    </div>
+</div>
+
 <h2 data-i18n="customer_login">Müşteri Girişi</h2>
 <form action="/customer/auth" method="POST">
     <input type="text" name="code" data-i18n="restaurant_code" maxlength="8" required>
@@ -286,6 +305,38 @@ customer_index_view = '''
 <div style="text-align: center; margin-top: 25px; border-top: 1px solid #222; padding-top: 15px;">
     <a href="/restaurant/login" data-i18n="login">Restoran Girişi</a>
 </div>
+
+<script>
+    const intro = document.getElementById('lkantf-intro');
+    const video = document.getElementById('introVideo');
+
+    function closeIntro() {
+        if(intro) {
+            intro.style.opacity = '0';
+            setTimeout(() => {
+                intro.style.display = 'none';
+                sessionStorage.setItem('intro_seen', 'true');
+            }, 800);
+        }
+    }
+
+    document.addEventListener("DOMContentLoaded", function() {
+        if (sessionStorage.getItem('intro_seen')) {
+            if(intro) intro.style.display = 'none';
+            return;
+        }
+
+        if(video) {
+            video.onended = function() {
+                closeIntro();
+            };
+            
+            video.play().catch(function() {
+                setTimeout(closeIntro, 6000);
+            });
+        }
+    });
+</script>
 '''
 
 table_selection_view = '''
@@ -567,7 +618,6 @@ restaurant_orders_view = '''
 def customer_home():
     return render_lkantf_framework(customer_index_view)
 
-# ANDROID TELEFONLARIN SİTEYİ SAF UYGULAMA OLARAK OKUMASI İÇİN ARKA PLAN GİZLİ SERVİSLERİ
 @app.route('/manifest.json')
 def manifest():
     pwa_data = {
@@ -584,7 +634,6 @@ def manifest():
 
 @app.route('/sw.js')
 def service_worker():
-    # Android'in zorunlu tuttuğu sahte önbellekleme servisi (Uygulama hissi yaratır)
     js_code = "self.addEventListener('fetch', function(event) { event.respondWith(fetch(event.request)); });"
     return app.response_class(js_code, mimetype='application/javascript')
 
@@ -804,13 +853,12 @@ def logout():
     return redirect(url_for('customer_home'))
 
 # ==========================================
-#     RENDER VE GITHUB LİMAN AYARLARI
+#       RENDER VE GITHUB LİMAN AYARLARI
 # ==========================================
 
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-        # Girişteki özel kodunu otomatik olarak sisteme kuruyoruz kanka
         if not Restaurant.query.filter_by(code='07076789').first():
             test_rest = Restaurant(
                 name='LKANT+F Merkez Restoran',
@@ -824,6 +872,5 @@ if __name__ == '__main__':
                 db.session.add(DiningTable(restaurant_id=test_rest.id, table_number=i, status='bos'))
             db.session.commit()
             
-    # Render'ın port ayarını otomatik yönetebilmesi için burayı sabitledim dostum
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)

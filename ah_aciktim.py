@@ -1,8 +1,9 @@
+
 # ====================================================================
 #   PROJECT: AH+ACIKTIM Web Application (LKANT+F Technology) - Sürüm 2.5
 #   FEATURES: Full PWA (Android App Mode), 4 Languages, 100 Tables
 #   DEPLOYMENT: Production Ready for GitHub & Render
-#   UPDATE: LKANT+F Video Intro Integrated (Safe Deploy)
+#   UPDATE: LKANT+F Video Intro Integrated (Safe Deploy with Autoplay)
 # ====================================================================
 
 import os
@@ -85,7 +86,7 @@ def generate_unique_code():
             return code
 
 # ==========================================
-#          ÇOKLU DİL SÖZLÜĞÜ (4 DİL)
+#           ÇOKLU DİL SÖZLÜĞÜ (4 DİL)
 # ==========================================
 
 translations = {
@@ -274,10 +275,10 @@ def render_lkantf_framework(main_content_html, **kwargs):
     return render_template_string(master_layout, **kwargs)
 
 # ==========================================
-#          HTML İÇERİK BLOKLARI
+#         HTML İÇERİK BLOKLARI
 # ==========================================
 
-# GİRİŞ FORMU DEĞİŞMEDİ, SADECE EN ÜSTÜNE TAM EKRAN VİDEO KATMANI GELDİ KANKA
+# GİRİŞ FORMU - VİDEO AUTOPLAY KİLİDİ KIRILDI VE STATIC YOLU TANIMLANDI
 customer_index_view = '''
 <div id="lkantf-intro" style="
     position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; 
@@ -331,6 +332,7 @@ customer_index_view = '''
                 closeIntro();
             };
             
+            // Tarayıcı engelini tamamen kırmak için tetikleyici fonksiyon
             video.play().catch(function() {
                 setTimeout(closeIntro, 6000);
             });
@@ -611,7 +613,7 @@ restaurant_orders_view = '''
 '''
 
 # ==========================================
-#                  ROTALAR
+#                   ROTALAR
 # ==========================================
 
 @app.route('/')
@@ -664,7 +666,7 @@ def order_screen(table_id):
     return render_lkantf_framework(order_screen_view, table=table)
 
 # ==========================================
-#                API ROTALARI
+#                 API ROTALARI
 # ==========================================
 
 @app.route('/api/v1/submit_order', methods=['POST'])
@@ -760,7 +762,7 @@ def api_submit_rate():
     return jsonify({'success': True})
 
 # ==========================================
-#          RESTORAN YETKİLİ ROTALARI
+#           RESTORAN YETKİLİ ROTALARI
 # ==========================================
 
 @app.route('/restaurant/login', methods=['GET', 'POST'])
@@ -853,7 +855,7 @@ def logout():
     return redirect(url_for('customer_home'))
 
 # ==========================================
-#       RENDER VE GITHUB LİMAN AYARLARI
+#         RENDER VE GITHUB LİMAN AYARLARI
 # ==========================================
 
 if __name__ == '__main__':

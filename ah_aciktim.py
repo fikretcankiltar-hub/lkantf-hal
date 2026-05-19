@@ -1,15 +1,16 @@
 # ====================================================================
-#   PROJECT: AH+ACIKTIM Web Application (LKANT+F Technology) - Sürüm 2.5
-#   FEATURES: Full PWA (Android App Mode), 4 Languages, 100 Tables
-#   DEPLOYMENT: Production Ready for GitHub & Render
+#   PROJECT: AH+ACIKTIM Web Application (LKANT+F Technology) - Sürüm 3.1
+#   FEATURES: PWA, 4 Dil, 100 Masa, Fotoğraf Albümü, Sipariş Geçmişi, Geri Tuşu
+#   NO EXTERNAL BACK BUTTON, INTERNAL BACK BUTTON INCLUDED
 # ====================================================================
 
 import os
 import json
 import random
 import string
+import base64
 from datetime import datetime
-from flask import Flask, render_template_string, request, redirect, url_for, session, flash, jsonify
+from flask import Flask, render_template_string, request, redirect, url_for, session, jsonify
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from flask_bcrypt import Bcrypt
 from flask_sqlalchemy import SQLAlchemy
@@ -40,6 +41,7 @@ class Restaurant(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=datetime.now)
     tables = db.relationship('DiningTable', backref='restaurant', lazy=True, cascade="all, delete-orphan")
     orders = db.relationship('Order', backref='restaurant', lazy=True, cascade="all, delete-orphan")
+    photos = db.relationship('AlbumPhoto', backref='restaurant', lazy=True, cascade="all, delete-orphan")
 
 class MenuItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -73,6 +75,13 @@ class OrderItem(db.Model):
     item_note = db.Column(db.String(200), nullable=True)
     tea_quantity = db.Column(db.Integer, default=0)
 
+class AlbumPhoto(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    restaurant_id = db.Column(db.Integer, db.ForeignKey('restaurant.id'), nullable=False)
+    order_id = db.Column(db.Integer, db.ForeignKey('order.id'), nullable=True)
+    image_data = db.Column(db.Text, nullable=False)  # base64 encoded
+    created_at = db.Column(db.DateTime, default=datetime.now)
+
 @login_manager.user_loader
 def load_user(user_id):
     return Restaurant.query.get(int(user_id))
@@ -89,56 +98,148 @@ def generate_unique_code():
 
 translations = {
     'tr': {
-        'app_name': 'AH+ACIKTIM', 'tech': 'TEKNOLOJİ', 'customer_login': 'Müşteri Girişi',
-        'restaurant_code': 'Restoran Kodu (8 Haneli)', 'your_name': 'Adınız', 'enter': 'Sisteme Bağlan',
-        'select_table': 'Masa Seçimi', 'order_page': 'Sipariş Ekranı', 'dish_number': 'Yemek No',
-        'quantity': 'Adet', 'note': 'Müşteri Notu (Tuzsuz, şekersiz vb.)', 'tea_qty': 'Çay Adeti ☕',
-        'call_waiter': 'Garson Çağır 🔔', 'submit_order': 'Siparişi Mutfağa Gönder 🚀',
-        'rating_title': 'Hesap Kapatma ve Puanlama', 'send_rating': 'Hesabı Kapat & Puanı Gönder', 'login': 'Restoran Girişi',
-        'register': 'Yeni Restoran Kaydı', 'email': 'E-posta Adresi', 'password': 'Şifre',
-        'dashboard': 'Yönetim Paneli', 'manage_menu': 'Menü Tanımlama', 'manage_tables': '100 Masa Durumu',
-        'orders': 'Gelen Canlı Siparişler', 'invalid_code': 'Hatalı kod girdin usta, kontrol et!',
-        'back_to_panel': 'Panele Dön', 'add_item': '+ Yeni Kalem Yemek Ekle', 'order_status': 'Sipariş Durumu',
-        'ask_bill': 'Hesap İste & Masadan Kalk 💳'
+        'app_name': 'AH+ACIKTIM',
+        'welcome': 'Hoş geldiniz değerli müşterimiz',
+        'back': '← Geri',
+        'customer_login': 'Müşteri Girişi',
+        'restaurant_code': 'Restoran Kodu (8 Haneli)',
+        'your_name': 'Adınız',
+        'enter': 'Sisteme Bağlan',
+        'select_table': 'Masa Seçimi',
+        'order_page': 'Sipariş Ekranı',
+        'dish_number': 'Yemek No',
+        'quantity': 'Adet',
+        'note': 'Müşteri Notu (Tuzsuz, şekersiz vb.)',
+        'tea_qty': 'Çay Adeti ☕',
+        'call_waiter': 'Garson Çağır 🔔',
+        'submit_order': 'Siparişi Mutfağa Gönder 🚀',
+        'rating_title': 'Hesap Kapatma ve Puanlama',
+        'send_rating': 'Hesabı Kapat & Puanı Gönder',
+        'login': 'Restoran Girişi',
+        'register': 'Yeni Restoran Kaydı',
+        'email': 'E-posta Adresi',
+        'password': 'Şifre',
+        'dashboard': 'Yönetim Paneli',
+        'manage_menu': 'Menü Tanımlama',
+        'manage_tables': '100 Masa Durumu',
+        'orders': 'Gelen Canlı Siparişler',
+        'invalid_code': 'Hatalı kod girdin usta, kontrol et!',
+        'back_to_panel': 'Panele Dön',
+        'add_item': '+ Yeni Kalem Yemek Ekle',
+        'order_status': 'Sipariş Durumu',
+        'ask_bill': 'Hesap İste & Masadan Kalk 💳',
+        'take_photo': 'Fotoğraf Çek & Paylaş',
+        'album': 'Albüm',
+        'my_orders': 'Siparişlerim',
+        'photo_sent': 'Fotoğraf paylaşıldı!'
     },
     'en': {
-        'app_name': 'AH+ACIKTIM', 'tech': 'TECHNOLOGY', 'customer_login': 'Customer Login',
-        'restaurant_code': 'Restaurant Code (8 Digits)', 'your_name': 'Your Name', 'enter': 'Connect to System',
-        'select_table': 'Select Your Table', 'order_page': 'Order Screen', 'dish_number': 'Dish No',
-        'quantity': 'Qty', 'note': 'Customer Note (No salt, sugar-free etc.)', 'tea_qty': 'Tea Quantity ☕',
-        'call_waiter': 'Call Waiter 🔔', 'submit_order': 'Send Order to Kitchen 🚀',
-        'rating_title': 'Close Bill & Rate Experience', 'send_rating': 'Close Bill & Send Rating', 'login': 'Restaurant Login',
-        'register': 'Register New Restaurant', 'email': 'Email Address', 'password': 'Password',
-        'dashboard': 'Dashboard', 'manage_menu': 'Menu Setup', 'manage_tables': '100 Tables Grid',
-        'orders': 'Live Orders Log', 'invalid_code': 'Invalid code, please check!',
-        'back_to_panel': 'Back to Dashboard', 'add_item': '+ Add New Dish Row', 'order_status': 'Order Status',
-        'ask_bill': 'Request Bill & Leave  credentials 💳'
+        'app_name': 'AH+ACIKTIM',
+        'welcome': 'Welcome dear customer',
+        'back': '← Back',
+        'customer_login': 'Customer Login',
+        'restaurant_code': 'Restaurant Code (8 Digits)',
+        'your_name': 'Your Name',
+        'enter': 'Connect to System',
+        'select_table': 'Select Your Table',
+        'order_page': 'Order Screen',
+        'dish_number': 'Dish No',
+        'quantity': 'Qty',
+        'note': 'Customer Note (No salt, sugar-free etc.)',
+        'tea_qty': 'Tea Quantity ☕',
+        'call_waiter': 'Call Waiter 🔔',
+        'submit_order': 'Send Order to Kitchen 🚀',
+        'rating_title': 'Close Bill & Rate Experience',
+        'send_rating': 'Close Bill & Send Rating',
+        'login': 'Restaurant Login',
+        'register': 'Register New Restaurant',
+        'email': 'Email Address',
+        'password': 'Password',
+        'dashboard': 'Dashboard',
+        'manage_menu': 'Menu Setup',
+        'manage_tables': '100 Tables Grid',
+        'orders': 'Live Orders Log',
+        'invalid_code': 'Invalid code, please check!',
+        'back_to_panel': 'Back to Dashboard',
+        'add_item': '+ Add New Dish Row',
+        'order_status': 'Order Status',
+        'ask_bill': 'Request Bill & Leave 💳',
+        'take_photo': 'Take Photo & Share',
+        'album': 'Album',
+        'my_orders': 'My Orders',
+        'photo_sent': 'Photo shared!'
     },
     'de': {
-        'app_name': 'AH+ACIKTIM', 'tech': 'TECHNOLOGIE', 'customer_login': 'Kundenlogin',
-        'restaurant_code': 'Restaurantcode (8-stellig)', 'your_name': 'Ihr Name', 'enter': 'Mit System verbinden',
-        'select_table': 'Tisch auswählen', 'order_page': 'Bestellbildschirm', 'dish_number': 'Gericht Nr.',
-        'quantity': 'Anzahl', 'note': 'Kundenhinweis (Salzfrei, zuckerfrei usw.)', 'tea_qty': 'Tee Anzahl ☕',
-        'call_waiter': 'Kellner rufen 🔔', 'submit_order': 'Bestellung an die Küche senden 🚀',
-        'rating_title': 'Rechnung schließen & Bewerten', 'send_rating': 'Rechnung schließen & Senden', 'login': 'Restaurant Login',
-        'register': 'Neues Restaurant registrieren', 'email': 'E-Mail-Adresse', 'password': 'Passwort',
-        'dashboard': 'Dashboard', 'manage_menu': 'Menüverwaltung', 'manage_tables': '100 Tische Status',
-        'orders': 'Live-Bestellungen', 'invalid_code': 'Ungültiger Code, bitte überprüfen!',
-        'back_to_panel': 'Zurück zum Dashboard', 'add_item': '+ Neue Zeile hinzufügen', 'order_status': 'Bestellstatus',
-        'ask_bill': 'Rechnung anfordern 💳'
+        'app_name': 'AH+ACIKTIM',
+        'welcome': 'Willkommen lieber Kunde',
+        'back': '← Zurück',
+        'customer_login': 'Kundenlogin',
+        'restaurant_code': 'Restaurantcode (8-stellig)',
+        'your_name': 'Ihr Name',
+        'enter': 'Mit System verbinden',
+        'select_table': 'Tisch auswählen',
+        'order_page': 'Bestellbildschirm',
+        'dish_number': 'Gericht Nr.',
+        'quantity': 'Anzahl',
+        'note': 'Kundenhinweis (Salzfrei, zuckerfrei usw.)',
+        'tea_qty': 'Tee Anzahl ☕',
+        'call_waiter': 'Kellner rufen 🔔',
+        'submit_order': 'Bestellung an die Küche senden 🚀',
+        'rating_title': 'Rechnung schließen & Bewerten',
+        'send_rating': 'Rechnung schließen & Senden',
+        'login': 'Restaurant Login',
+        'register': 'Neues Restaurant registrieren',
+        'email': 'E-Mail-Adresse',
+        'password': 'Passwort',
+        'dashboard': 'Dashboard',
+        'manage_menu': 'Menüverwaltung',
+        'manage_tables': '100 Tische Status',
+        'orders': 'Live-Bestellungen',
+        'invalid_code': 'Ungültiger Code, bitte überprüfen!',
+        'back_to_panel': 'Zurück zum Dashboard',
+        'add_item': '+ Neue Zeile hinzufügen',
+        'order_status': 'Bestellstatus',
+        'ask_bill': 'Rechnung anfordern 💳',
+        'take_photo': 'Foto aufnehmen & teilen',
+        'album': 'Album',
+        'my_orders': 'Meine Bestellungen',
+        'photo_sent': 'Foto geteilt!'
     },
     'ru': {
-        'app_name': 'AH+ACIKTIM', 'tech': 'ТЕХНОЛОГИЯ', 'customer_login': 'Вход для клиентов',
-        'restaurant_code': 'Код ресторана (8 цифр)', 'your_name': 'Ваше имя', 'enter': 'Подключиться к системе',
-        'select_table': 'Выбор стола', 'order_page': 'Экран заказа', 'dish_number': 'Номер блюда',
-        'quantity': 'Кол-во', 'note': 'Заметка (Без соли, без сахара и т.д.)', 'tea_qty': 'Кол-во чая ☕',
-        'call_waiter': 'Позвать официанта 🔔', 'submit_order': 'Отправить заказ на кухню 🚀',
-        'rating_title': 'Закрытие счета и оценка', 'send_rating': 'Закрыть счет и отправить оценку', 'login': 'Вход для ресторанов',
-        'register': 'Регистрация нового ресторана', 'email': 'Электронная почта', 'password': 'Пароль',
-        'dashboard': 'Панель управления', 'manage_menu': 'Настройка меню', 'manage_tables': 'Карта на 100 столов',
-        'orders': 'Живой лог заказов', 'invalid_code': 'Неверный код, проверьте еще раз!',
-        'back_to_panel': 'Вернуться в панель', 'add_item': '+ Добавить новое блюдо', 'order_status': 'Статус заказа',
-        'ask_bill': 'Запросить счет 💳'
+        'app_name': 'AH+ACIKTIM',
+        'welcome': 'Добро пожаловать, уважаемый клиент',
+        'back': '← Назад',
+        'customer_login': 'Вход для клиентов',
+        'restaurant_code': 'Код ресторана (8 цифр)',
+        'your_name': 'Ваше имя',
+        'enter': 'Подключиться к системе',
+        'select_table': 'Выбор стола',
+        'order_page': 'Экран заказа',
+        'dish_number': 'Номер блюда',
+        'quantity': 'Кол-во',
+        'note': 'Заметка (Без соли, без сахара и т.д.)',
+        'tea_qty': 'Кол-во чая ☕',
+        'call_waiter': 'Позвать официанта 🔔',
+        'submit_order': 'Отправить заказ на кухню 🚀',
+        'rating_title': 'Закрытие счета и оценка',
+        'send_rating': 'Закрыть счет и отправить оценку',
+        'login': 'Вход для ресторанов',
+        'register': 'Регистрация нового ресторана',
+        'email': 'Электронная почта',
+        'password': 'Пароль',
+        'dashboard': 'Панель управления',
+        'manage_menu': 'Настройка меню',
+        'manage_tables': 'Карта на 100 столов',
+        'orders': 'Живой лог заказов',
+        'invalid_code': 'Неверный код, проверьте еще раз!',
+        'back_to_panel': 'Вернуться в панель',
+        'add_item': '+ Добавить новое блюдо',
+        'order_status': 'Статус заказа',
+        'ask_bill': 'Запросить счет 💳',
+        'take_photo': 'Сделать фото и поделиться',
+        'album': 'Альбом',
+        'my_orders': 'Мои заказы',
+        'photo_sent': 'Фото отправлено!'
     }
 }
 
@@ -146,53 +247,87 @@ translations = {
 #          MİMARİ TEMPLATE MOTORU
 # ==========================================
 
-def render_lkantf_framework(main_content_html, **kwargs):
+def render_lkantf_framework(main_content_html, back_url=None, **kwargs):
     master_layout = '''
     <!DOCTYPE html>
     <html lang="tr">
     <head>
         <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
         
         <meta name="apple-mobile-web-app-capable" content="yes">
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
         <meta name="theme-color" content="#0c0c0e">
         <link rel="manifest" href="/manifest.json">
+        <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3443/3443338.png">
         
-        <title>AH+ACIKTIM | LKANT+F TEKNOLOJİ</title>
+        <title>AH+ACIKTIM</title>
         <style>
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-            body { background: #0c0c0e; color: #f5f5f7; display: flex; flex-direction: column; min-height: 100vh; overflow-x: hidden; }
+            body { 
+                background: linear-gradient(135deg, #0a0a0f 0%, #14141f 100%);
+                color: #f5f5f7; 
+                display: flex; 
+                flex-direction: column; 
+                min-height: 100vh; 
+                overflow-x: hidden;
+                background-attachment: fixed;
+            }
             
-            .neon-brand { text-align: center; padding: 25px 10px; font-size: 2.8rem; font-weight: 900; color: #fff; letter-spacing: 2px;
-                text-shadow: 0 0 10px #00e6ff, 0 0 20px #00e6ff; animation: pulseGlow 3s infinite alternate; }
+            .neon-brand { 
+                text-align: center; 
+                padding: 30px 10px 5px; 
+                font-size: 3.2rem; 
+                font-weight: 900; 
+                color: #fff; 
+                letter-spacing: 3px;
+                text-shadow: 0 0 15px #00e6ff, 0 0 30px #00e6ff, 0 0 45px #ff0055;
+                animation: pulseGlow 3s infinite alternate; 
+            }
             @keyframes pulseGlow {
-                0% { text-shadow: 0 0 10px #00e6ff, 0 0 20px #00e6ff; opacity: 0.9; }
+                0% { text-shadow: 0 0 15px #00e6ff, 0 0 30px #00e6ff; opacity: 0.95; }
                 100% { text-shadow: 0 0 25px #ff0055, 0 0 50px #ff0055; opacity: 1; }
             }
             
+            .welcome-banner {
+                text-align: center;
+                margin: 15px auto;
+                font-size: 1.4rem;
+                font-weight: 600;
+                color: #00e6ff;
+                background: rgba(0, 230, 255, 0.08);
+                padding: 12px 20px;
+                border-radius: 30px;
+                display: inline-block;
+                animation: fadeInUp 0.8s ease;
+            }
+            @keyframes fadeInUp {
+                from { opacity: 0; transform: translateY(20px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            
             .lang-wrapper { text-align: center; margin-bottom: 15px; }
-            .lang-wrapper button { background: #1c1c24; border: 1px solid #2d2d3d; color: #fff; padding: 6px 12px; margin: 0 4px; 
+            .lang-wrapper button { background: #1c1c24; border: 1px solid #2d2d3d; color: #fff; padding: 6px 14px; margin: 0 4px; 
                 cursor: pointer; border-radius: 6px; font-weight: 600; transition: all 0.2s ease; }
             .lang-wrapper button:hover { background: #00e6ff; color: #0c0c0e; border-color: #00e6ff; transform: translateY(-2px); }
             
-            .main-frame { max-width: 650px; width: 92%; margin: 10px auto 40px auto; padding: 25px; background: #13131a; 
-                border-radius: 20px; box-shadow: 0 10px 30px rgba(0, 230, 255, 0.08); border: 1px solid #1f1f2e; flex: 1; }
+            .main-frame { max-width: 650px; width: 92%; margin: 10px auto 40px auto; padding: 25px; background: rgba(19, 19, 26, 0.9); 
+                border-radius: 24px; box-shadow: 0 15px 35px rgba(0, 230, 255, 0.1); border: 1px solid #1f1f2e; flex: 1; backdrop-filter: blur(10px); }
             
             h2 { margin-bottom: 20px; font-weight: 700; color: #fff; text-align: center; }
-            input, select, textarea { width: 100%; padding: 12px 16px; margin: 10px 0; border-radius: 8px; border: 1px solid #2d2d3d; 
+            input, select, textarea { width: 100%; padding: 12px 16px; margin: 10px 0; border-radius: 12px; border: 1px solid #2d2d3d; 
                 background: #08080c; color: #00e6ff; font-size: 1rem; font-weight: 600; transition: all 0.2s ease; }
-            input:focus, select:focus, textarea:focus { outline: none; border-color: #00e6ff; box-shadow: 0 0 8px rgba(0, 230, 255, 0.3); }
+            input:focus, select:focus, textarea:focus { outline: none; border-color: #00e6ff; box-shadow: 0 0 12px rgba(0, 230, 255, 0.3); }
             textarea { height: 80px; resize: none; }
             
             button[type="submit"], .action-btn { background: #00e6ff; color: #0c0c0e; font-weight: 800; text-transform: uppercase; 
-                letter-spacing: 1px; cursor: pointer; transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); border: none; padding: 14px; border-radius: 8px; width: 100%; margin-top: 10px; }
-            button[type="submit"]:hover, .action-btn:hover { background: #ff0055; color: #fff; transform: scale(1.02); box-shadow: 0 5px 15px rgba(255, 0, 85, 0.4); }
+                letter-spacing: 1px; cursor: pointer; transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); border: none; padding: 14px; border-radius: 12px; width: 100%; margin-top: 10px; }
+            button[type="submit"]:hover, .action-btn:hover { background: #ff0055; color: #fff; transform: scale(1.02); box-shadow: 0 8px 20px rgba(255, 0, 85, 0.4); }
             
             .grid-100 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-top: 20px; max-height: 400px; overflow-y: auto; padding-right: 5px; }
             .grid-100::-webkit-scrollbar { width: 6px; }
             .grid-100::-webkit-scrollbar-thumb { background: #2d2d3d; border-radius: 4px; }
-            .grid-box { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: 10px; font-weight: 800; font-size: 1.1rem; cursor: pointer; transition: all 0.2s ease; }
+            .grid-box { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: 14px; font-weight: 800; font-size: 1.1rem; cursor: pointer; transition: all 0.2s ease; }
             .grid-box:hover { transform: scale(1.08); filter: brightness(1.2); }
             .bos { background: linear-gradient(135deg, #2ecc71, #27ae60); color: #fff; box-shadow: 0 4px 10px rgba(46, 204, 113, 0.2); }
             .dolu { background: linear-gradient(135deg, #e74c3c, #c0392b); color: #fff; box-shadow: 0 4px 10px rgba(231, 76, 60, 0.2); }
@@ -214,13 +349,46 @@ def render_lkantf_framework(main_content_html, **kwargs):
             .ctrl-btn { background: #2c2c35; color: #fff; padding: 5px 10px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; margin: 0 5px; }
             .ctrl-btn:hover { background: #00e6ff; color: #000; }
 
+            .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 15px; margin-top: 20px; }
+            .photo-card { background: #1c1c24; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.3); transition: transform 0.2s; }
+            .photo-card:hover { transform: scale(1.03); }
+            .photo-card img { width: 100%; height: 140px; object-fit: cover; }
+            .photo-info { padding: 8px; font-size: 0.8rem; color: #a0a0b0; }
+            
+            .back-button {
+                display: inline-block;
+                background: rgba(255, 255, 255, 0.08);
+                color: #00e6ff;
+                padding: 8px 18px;
+                border-radius: 20px;
+                font-weight: 700;
+                cursor: pointer;
+                transition: all 0.2s;
+                text-decoration: none;
+                margin-bottom: 10px;
+                border: 1px solid rgba(0, 230, 255, 0.2);
+            }
+            .back-button:hover {
+                background: rgba(0, 230, 255, 0.15);
+                border-color: #00e6ff;
+                transform: translateX(-3px);
+            }
+            
             .lkantf-footer { text-align: center; padding: 20px; font-weight: 900; letter-spacing: 4px; font-size: 1.1rem; background: #08080c; color: #00e6ff; border-top: 1px solid #13131a; margin-top: auto; text-shadow: 0 0 8px rgba(0, 230, 255, 0.4); }
             a { color: #00e6ff; text-decoration: none; font-weight: 600; display: inline-block; margin-top: 15px; }
             a:hover { color: #ff0055; }
+            .nav-buttons { display: flex; gap: 10px; margin: 15px 0; flex-wrap: wrap; justify-content: center; }
+            .nav-btn { background: #2d2d3d; color: #fff; padding: 10px 18px; border-radius: 20px; font-weight: 600; text-decoration: none; transition: all 0.2s; }
+            .nav-btn:hover { background: #ff0055; }
+            #photoCaptureInput { display: none; }
         </style>
     </head>
     <body>
-        <div class="neon-brand"><span id="app_name">AH+ACIKTIM</span></div>
+        <div class="neon-brand" id="app_name">AH+ACIKTIM</div>
+        
+        <div style="text-align: center;">
+            <div class="welcome-banner" id="welcome_msg" data-i18n="welcome">Hoş geldiniz değerli müşterimiz</div>
+        </div>
         
         <div class="lang-wrapper">
             <button onclick="switchLanguage('tr')">🇹🇷 TR</button>
@@ -230,12 +398,23 @@ def render_lkantf_framework(main_content_html, **kwargs):
         </div>
         
         <div class="main-frame">
+            {% if back_url %}
+            <a href="{{ back_url }}" class="back-button" data-i18n="back">← Geri</a>
+            {% endif %}
             ''' + main_content_html + '''
         </div>
         
         <div class="lkantf-footer">⚡ LKANT+F TEKNOLOJİ ⚡</div>
 
         <script>
+            // Sayfa içi gezinme için tarayıcı geçmişini temiz tutalım (PWA hissi)
+            window.addEventListener('pageshow', function(event) {
+                if (event.persisted || (window.performance && window.performance.navigation.type == 2)) {
+                    // Geri tuşuyla gelinmiş, sayfayı yenileyelim ki veriler taze olsun
+                    location.reload();
+                }
+            });
+
             const dictionary = ''' + json.dumps(translations) + ''';
             let activeLang = localStorage.getItem('app_lang') || 'tr';
             
@@ -250,9 +429,9 @@ def render_lkantf_framework(main_content_html, **kwargs):
                         }
                     }
                 });
-                const appNameText = dictionary[activeLang]?.['app_name'] || 'AH+ACIKTIM';
-                const techText = dictionary[activeLang]?.['tech'] || 'TEKNOLOJİ';
-                document.getElementById('app_name').innerHTML = appNameText + ' <span style="font-size:1.2rem; display:block; color:#ff0055; font-weight:700; letter-spacing:4px;">' + techText + '</span>';
+                document.getElementById('app_name').textContent = dictionary[activeLang]?.['app_name'] || 'AH+ACIKTIM';
+                const welcomeEl = document.getElementById('welcome_msg');
+                if (welcomeEl) welcomeEl.textContent = dictionary[activeLang]?.['welcome'] || 'Hoş geldiniz değerli müşterimiz';
             }
             
             function switchLanguage(targetLang) {
@@ -262,7 +441,7 @@ def render_lkantf_framework(main_content_html, **kwargs):
             }
             window.addEventListener('DOMContentLoaded', translateUI);
 
-            // PWA Android Service Worker Kaydı
+            // PWA Service Worker
             if ('serviceWorker' in navigator) {
                 navigator.serviceWorker.register('/sw.js').catch(function() {});
             }
@@ -270,7 +449,7 @@ def render_lkantf_framework(main_content_html, **kwargs):
     </body>
     </html>
     '''
-    return render_template_string(master_layout, **kwargs)
+    return render_template_string(master_layout, back_url=back_url, **kwargs)
 
 # ==========================================
 #          HTML İÇERİK BLOKLARI
@@ -295,6 +474,10 @@ table_selection_view = '''
     {% for table in tables %}
         <div class="grid-box {{ table.status }}" onclick="window.location='/order/screen/{{ table.id }}'">{{ table.table_number }}</div>
     {% endfor %}
+</div>
+<div class="nav-buttons">
+    <a href="/customer/album" class="nav-btn" data-i18n="album">Albüm</a>
+    <a href="/customer/my_orders" class="nav-btn" data-i18n="my_orders">Siparişlerim</a>
 </div>
 '''
 
@@ -330,11 +513,16 @@ order_screen_view = '''
     <button type="button" onclick="addNewRow()" class="action-btn" style="background:#2d2d3d; color:#fff; margin-bottom:15px;" data-i18n="add_item">+ Yeni Kalem Yemek Ekle</button>
     <textarea id="general_order_note" placeholder="Restorana iletmek istediğiniz genel not..." data-i18n="note"></textarea>
     
-    <div style="display:flex; gap:10px; margin-top:10px;">
+    <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
         <button type="button" onclick="triggerWaiter()" style="background:#ff0055; color:#fff; flex:1;" data-i18n="call_waiter">Garson Çağır 🔔</button>
         <button type="submit" style="flex:2;" data-i18n="submit_order">Siparişi Mutfağa Gönder 🚀</button>
     </div>
 </form>
+
+<div style="margin-top:20px; text-align:center;">
+    <input type="file" id="photoCaptureInput" accept="image/*" capture="environment" onchange="uploadPhoto()">
+    <button type="button" class="action-btn" style="background:#2c3e50; color:#fff;" onclick="document.getElementById('photoCaptureInput').click()" data-i18n="take_photo">Fotoğraf Çek & Paylaş</button>
+</div>
 
 <script>
     function adjustTea(btn, amount) {
@@ -435,6 +623,28 @@ order_screen_view = '''
         });
     }
 
+    async function uploadPhoto() {
+        const fileInput = document.getElementById('photoCaptureInput');
+        const file = fileInput.files[0];
+        if (!file) return;
+        
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            const base64Data = e.target.result;
+            const activeOrderId = localStorage.getItem('lkantf_active_order') || null;
+            
+            const res = await fetch('/api/v1/upload_photo', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ image: base64Data, order_id: activeOrderId })
+            });
+            if (res.ok) {
+                alert(dictionary[activeLang]?.['photo_sent'] || 'Fotoğraf paylaşıldı!');
+            }
+        };
+        reader.readAsDataURL(file);
+    }
+
     if(localStorage.getItem('lkantf_active_order')) {
         checkOrderStateLoop();
     }
@@ -471,6 +681,44 @@ customer_rating_view = '''
 </script>
 '''
 
+album_view = '''
+<h2 data-i18n="album">Albüm</h2>
+{% if photos %}
+<div class="photo-grid">
+    {% for photo in photos %}
+    <div class="photo-card">
+        <img src="{{ photo.image_data }}" alt="Fotoğraf">
+        <div class="photo-info">{{ photo.created_at.strftime('%d.%m.%Y %H:%M') }}</div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<p style="text-align:center; color:#a0a0b0;">Henüz fotoğraf paylaşılmadı.</p>
+{% endif %}
+'''
+
+my_orders_view = '''
+<h2 data-i18n="my_orders">Siparişlerim</h2>
+{% if orders %}
+    {% for order in orders %}
+    <div class="order-card" style="border-left-color: {% if order.status == 'Kapatıldı' %}#2ecc71{% else %}#00e6ff{% endif %};">
+        <strong>Masa {{ order.table_number }}</strong> - {{ order.created_at.strftime('%d.%m.%Y %H:%M') }}
+        <p>Durum: <span class="status-badge {% if order.status == 'Onay Bekliyor' %}status-waiting{% elif order.status == 'Hazırlanıyor' %}status-cooking{% elif order.status == 'Masaya Geldi' %}status-served{% elif order.status == 'Hesap İstendi' %}status-bill{% else %}status-served{% endif %}">{{ order.status }}</span></p>
+        <ul>
+        {% for item in order.items %}
+            <li>No {{ item.item_number }} x{{ item.quantity }} {% if item.tea_quantity > 0 %}[☕ {{ item.tea_quantity }}]{% endif %}</li>
+        {% endfor %}
+        </ul>
+        {% if order.rating %}
+        <p>Puanın: {% for i in range(order.rating) %}★{% endfor %}</p>
+        {% endif %}
+    </div>
+    {% endfor %}
+{% else %}
+    <p style="text-align:center; color:#a0a0b0;">Henüz sipariş vermedin.</p>
+{% endif %}
+'''
+
 restaurant_login_view = '''
 <h2 data-i18n="login">Restoran Girişi</h2>
 <form method="POST">
@@ -500,6 +748,7 @@ restaurant_dashboard_view = '''
 <a href="/restaurant/tables_grid"><button class="action-btn" data-i18n="manage_tables" style="background:#2ecc71; color:#fff;">100 Masa Durumu</button></a>
 <a href="/restaurant/live_orders"><button class="action-btn" data-i18n="orders">Gelen Canlı Siparişler</button></a>
 <a href="/restaurant/menu_setup"><button class="action-btn" data-i18n="manage_menu">Menü Tanımlama</button></a>
+<a href="/restaurant/album"><button class="action-btn" style="background:#8e44ad; color:#fff;">Albüm</button></a>
 <center><a href="/logout" style="color:#ff0055;">Çıkış</a></center>
 '''
 
@@ -559,15 +808,30 @@ restaurant_orders_view = '''
 </script>
 '''
 
+restaurant_album_view = '''
+<h2>Restoran Albümü</h2>
+{% if photos %}
+<div class="photo-grid">
+    {% for photo in photos %}
+    <div class="photo-card">
+        <img src="{{ photo.image_data }}" alt="Fotoğraf">
+        <div class="photo-info">Masa {{ photo.order.table_number if photo.order else '?' }} - {{ photo.created_at.strftime('%d.%m.%Y %H:%M') }}</div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<p style="text-align:center; color:#a0a0b0;">Henüz fotoğraf yok.</p>
+{% endif %}
+'''
+
 # ==========================================
 #                  ROTALAR
 # ==========================================
 
 @app.route('/')
 def customer_home():
-    return render_lkantf_framework(customer_index_view)
+    return render_lkantf_framework(customer_index_view)  # Ana sayfada geri butonu yok
 
-# ANDROID TELEFONLARIN SİTEYİ SAF UYGULAMA OLARAK OKUMASI İÇİN ARKA PLAN GİZLİ SERVİSLERİ
 @app.route('/manifest.json')
 def manifest():
     pwa_data = {
@@ -584,7 +848,6 @@ def manifest():
 
 @app.route('/sw.js')
 def service_worker():
-    # Android'in zorunlu tuttuğu sahte önbellekleme servisi (Uygulama hissi yaratır)
     js_code = "self.addEventListener('fetch', function(event) { event.respondWith(fetch(event.request)); });"
     return app.response_class(js_code, mimetype='application/javascript')
 
@@ -605,19 +868,30 @@ def customer_tables():
         return redirect(url_for('customer_home'))
     restaurant = Restaurant.query.get(session['target_restaurant_id'])
     tables = DiningTable.query.filter_by(restaurant_id=restaurant.id).all()
-    return render_lkantf_framework(table_selection_view, restaurant=restaurant, tables=tables)
+    return render_lkantf_framework(table_selection_view, back_url=url_for('customer_home'), restaurant=restaurant, tables=tables)
 
 @app.route('/order/screen/<int:table_id>')
 def order_screen(table_id):
     if 'target_restaurant_id' not in session:
         return redirect(url_for('customer_home'))
     table = DiningTable.query.get(table_id)
-    return render_lkantf_framework(order_screen_view, table=table)
+    return render_lkantf_framework(order_screen_view, back_url=url_for('customer_tables'), table=table)
 
-# ==========================================
-#                API ROTALARI
-# ==========================================
+@app.route('/customer/album')
+def customer_album():
+    if 'target_restaurant_id' not in session:
+        return redirect(url_for('customer_home'))
+    photos = AlbumPhoto.query.filter_by(restaurant_id=session['target_restaurant_id']).order_by(AlbumPhoto.created_at.desc()).all()
+    return render_lkantf_framework(album_view, back_url=url_for('customer_tables'), photos=photos)
 
+@app.route('/customer/my_orders')
+def customer_my_orders():
+    if 'target_restaurant_id' not in session or 'customer_name' not in session:
+        return redirect(url_for('customer_home'))
+    orders = Order.query.filter_by(restaurant_id=session['target_restaurant_id'], customer_name=session['customer_name']).order_by(Order.created_at.desc()).all()
+    return render_lkantf_framework(my_orders_view, back_url=url_for('customer_tables'), orders=orders)
+
+# API Rotaları (değişiklik yok)
 @app.route('/api/v1/submit_order', methods=['POST'])
 def api_submit_order():
     data = request.json
@@ -694,9 +968,32 @@ def api_call_waiter():
     db.session.commit()
     return jsonify({'success': True})
 
+@app.route('/api/v1/upload_photo', methods=['POST'])
+def api_upload_photo():
+    data = request.json
+    if 'image' not in data:
+        return jsonify({'error': 'No image'}), 400
+    
+    restaurant_id = session.get('target_restaurant_id')
+    if not restaurant_id:
+        return jsonify({'error': 'Not authenticated'}), 403
+    
+    order_id = data.get('order_id')
+    if order_id:
+        order_id = int(order_id)
+    
+    photo = AlbumPhoto(
+        restaurant_id=restaurant_id,
+        order_id=order_id,
+        image_data=data['image']
+    )
+    db.session.add(photo)
+    db.session.commit()
+    return jsonify({'success': True})
+
 @app.route('/experience/rating/<int:order_id>')
 def experience_rating(order_id):
-    return render_lkantf_framework(customer_rating_view, order_id=order_id)
+    return render_lkantf_framework(customer_rating_view, back_url=url_for('customer_tables'), order_id=order_id)
 
 @app.route('/api/v1/submit_rate', methods=['POST'])
 def api_submit_rate():
@@ -710,9 +1007,7 @@ def api_submit_rate():
         db.session.commit()
     return jsonify({'success': True})
 
-# ==========================================
-#          RESTORAN YETKİLİ ROTALARI
-# ==========================================
+# Restoran Yetkili Rotaları
 
 @app.route('/restaurant/login', methods=['GET', 'POST'])
 def restaurant_login():
@@ -723,7 +1018,7 @@ def restaurant_login():
         if restaurant and bcrypt.check_password_hash(restaurant.password_hash, password):
             login_user(restaurant)
             return redirect(url_for('restaurant_dashboard'))
-    return render_lkantf_framework(restaurant_login_view)
+    return render_lkantf_framework(restaurant_login_view, back_url=url_for('customer_home'))
 
 @app.route('/restaurant/register', methods=['GET', 'POST'])
 def restaurant_register():
@@ -747,18 +1042,18 @@ def restaurant_register():
         
         login_user(new_restaurant)
         return redirect(url_for('restaurant_dashboard'))
-    return render_lkantf_framework(restaurant_register_view)
+    return render_lkantf_framework(restaurant_register_view, back_url=url_for('restaurant_login'))
 
 @app.route('/restaurant/dashboard')
 @login_required
 def restaurant_dashboard():
-    return render_lkantf_framework(restaurant_dashboard_view)
+    return render_lkantf_framework(restaurant_dashboard_view, back_url=url_for('customer_home'))  # Panele girişte çıkış için geri anasayfaya
 
 @app.route('/restaurant/tables_grid')
 @login_required
 def restaurant_tables_grid():
     tables = DiningTable.query.filter_by(restaurant_id=current_user.id).all()
-    return render_lkantf_framework(restaurant_tables_view, tables=tables)
+    return render_lkantf_framework(restaurant_tables_view, back_url=url_for('restaurant_dashboard'), tables=tables)
 
 @app.route('/api/v1/toggle_table/<int:table_id>')
 @login_required
@@ -779,7 +1074,7 @@ def restaurant_menu_setup():
         db.session.commit()
         return redirect(url_for('restaurant_menu_setup'))
     menu = MenuItem.query.filter_by(restaurant_id=current_user.id).all()
-    return render_lkantf_framework(restaurant_menu_view, menu=menu)
+    return render_lkantf_framework(restaurant_menu_view, back_url=url_for('restaurant_dashboard'), menu=menu)
 
 @app.route('/restaurant/menu/delete/<int:item_id>')
 @login_required
@@ -794,7 +1089,13 @@ def restaurant_menu_delete(item_id):
 @login_required
 def restaurant_live_orders():
     orders = Order.query.filter_by(restaurant_id=current_user.id).order_by(Order.created_at.desc()).all()
-    return render_lkantf_framework(restaurant_orders_view, orders=orders)
+    return render_lkantf_framework(restaurant_orders_view, back_url=url_for('restaurant_dashboard'), orders=orders)
+
+@app.route('/restaurant/album')
+@login_required
+def restaurant_album():
+    photos = AlbumPhoto.query.filter_by(restaurant_id=current_user.id).order_by(AlbumPhoto.created_at.desc()).all()
+    return render_lkantf_framework(restaurant_album_view, back_url=url_for('restaurant_dashboard'), photos=photos)
 
 @app.route('/logout')
 @login_required
@@ -810,7 +1111,6 @@ def logout():
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-        # Girişteki özel kodunu otomatik olarak sisteme kuruyoruz kanka
         if not Restaurant.query.filter_by(code='07076789').first():
             test_rest = Restaurant(
                 name='LKANT+F Merkez Restoran',
@@ -824,6 +1124,5 @@ if __name__ == '__main__':
                 db.session.add(DiningTable(restaurant_id=test_rest.id, table_number=i, status='bos'))
             db.session.commit()
             
-    # Render'ın port ayarını otomatik yönetebilmesi için burayı sabitledim dostum
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
